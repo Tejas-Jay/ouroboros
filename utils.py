@@ -1,11 +1,12 @@
 import streamlit as st
 from Bio import Entrez, SeqIO
 import re # Added for text cleaning
+from Bio.SeqUtils.ProtParam import ProteinAnalysis
 
 # -----------------------------------------------------------------------------
 # CONFIGURATION
 # -----------------------------------------------------------------------------
-Entrez.email = "student_project@bmsce.ac.in" 
+Entrez.email = "rafekatchadorian27@gmail.com" 
 
 # -----------------------------------------------------------------------------
 # HELPER FUNCTIONS
@@ -96,12 +97,28 @@ def get_toxin_details(toxin_id):
         st.error(f"Error fetching toxin details: {e}")
         return None
 
+def analyze_protein(sequence):
+    """
+    Takes a sequence string and returns a dictionary of physicochemical properties.
+    Uses Bio.SeqUtils.ProtParam.
+    """
+    # ProteinAnalysis requires a string, not a Seq object
+    analyser = ProteinAnalysis(str(sequence))
+    
+    # Calculate properties
+    return {
+        "molecular_weight": analyser.molecular_weight(),
+        "instability_index": analyser.instability_index(),
+        "isoelectric_point": analyser.isoelectric_point(),
+        "amino_acid_percent": analyser.get_amino_acids_percent() # Returns dict like {'A': 0.12, 'C': 0.05...}
+    }
+
 # -----------------------------------------------------------------------------
 # TEST BLOCK
 # -----------------------------------------------------------------------------
 if __name__ == "__main__":
     print("--- RUNNING CLEANER TEST ---")
-    test_snake = "Green Anaconda"
+    test_snake = "King Cobra"
     hits = search_toxins(test_snake)
     
     if hits:
