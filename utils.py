@@ -1,7 +1,8 @@
 import streamlit as st
 from Bio import Entrez, SeqIO
-import re # Added for text cleaning
+import re
 from Bio.SeqUtils.ProtParam import ProteinAnalysis
+import requests
 
 # -----------------------------------------------------------------------------
 # CONFIGURATION
@@ -110,8 +111,52 @@ def analyze_protein(sequence):
         "molecular_weight": analyser.molecular_weight(),
         "instability_index": analyser.instability_index(),
         "isoelectric_point": analyser.isoelectric_point(),
-        "amino_acid_percent": analyser.get_amino_acids_percent() # Returns dict like {'A': 0.12, 'C': 0.05...}
+        "amino_acid_percent": analyser.get_amino_acids_percent()
     }
+
+def get_pdb_structure(uniprot_id):
+    """
+    Attempts to find and fetch PDB structure data for a protein.
+    First tries to extract UniProt ID from the record ID,
+    then queries the PDB API for associated structures.
+    
+    Returns: (pdb_id, pdb_data) tuple or (None, None) if not found
+    """
+    try:
+        # Clean the UniProt ID (remove version numbers like .1, .2)
+        clean_id = uniprot_id.split('.')[0]
+        
+        # Query PDB API to find structures associated with this UniProt ID
+        search_url = f"https://www.ebi.ac.uk/pdbe/api/mappings/uniprot/{clean_id}"
+        response = requests.get(search_url, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            
+            # Get the first PDB ID from the results
+            if clean_id in data and data[clean_id]:
+                pdb_ids = list(data[clean_id].keys())
+                if pdb_ids:
+                    pdb_id = pdb_ids[0]  # Take the first structure
+                    
+                    # Now fetch the actual PDB file
+                    pdb_url = f"https://files.rcsb.org/download/{pdb_id}.pdb"
+                    pdb_response = requests.get(pdb_url, timeout=10)
+                    
+                    if pdb_response.status_code == 200:
+                        return pdb_id, pdb_response.text
+        
+        # If PDBe search fails, try AlphaFold database
+        alphafold_url = f"https://alphafold.ebi.ac.uk/files/AF-{clean_id}-F1-model_v4.pdb"
+        af_response = requests.get(alphafold_url, timeout=10)
+        
+        if af_response.status_code == 200:
+            return f"AlphaFold-{clean_id}", af_response.text
+            
+    except Exception as e:
+        st.warning(f"Could not fetch 3D structure: {e}")
+    
+    return None, None
 
 # -----------------------------------------------------------------------------
 # TEST BLOCK
