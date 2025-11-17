@@ -1,6 +1,8 @@
 import streamlit as st
-import utils  # We import the file we just finished!
+import utils
 import matplotlib.pyplot as plt
+import py3Dmol
+from stmol import showmol
 
 # -----------------------------------------------------------------------------
 # PAGE CONFIGURATION
@@ -8,7 +10,7 @@ import matplotlib.pyplot as plt
 st.set_page_config(
     page_title="Venom Profiler",
     page_icon="🐍",
-    layout="centered"
+    layout="wide"  # Changed to wide for better 3D visualization
 )
 
 # -----------------------------------------------------------------------------
@@ -25,6 +27,19 @@ with st.sidebar:
     st.header("🔍 Search Settings")
     snake_query = st.text_input("Enter Snake Name:", placeholder="e.g., Black Mamba")
     search_button = st.button("Find Toxins")
+    
+    st.markdown("---")
+    st.markdown("### 🎨 3D Visualization Style")
+    
+    viz_style = st.selectbox(
+        "Choose display style:",
+        ["Cartoon", "Stick", "Sphere", "Line", "Cross"]
+    )
+    
+    color_scheme = st.selectbox(
+        "Color scheme:",
+        ["spectrum", "chain", "secondary structure", "atom type"]
+    )
 
 # -----------------------------------------------------------------------------
 # MAIN LOGIC
@@ -53,7 +68,6 @@ if st.session_state.toxin_results:
     st.subheader("Select a Toxin to Analyze")
     
     # create the dropdown
-    # .keys() gives the clean names we made: "Mambalgin-1 (P0DKR6.1)"
     selected_label = st.selectbox(
         "Choose from the list:", 
         options=st.session_state.toxin_results.keys()
@@ -64,7 +78,7 @@ if st.session_state.toxin_results:
     
     st.info(f"You selected ID: **{selected_id}**")
     
-    # Placeholder for Sprint 3 (The Analysis)
+    # Analysis Button
     if st.button("Analyze Toxin 🧬"):
         with st.spinner("Fetching sequence and calculating properties..."):
             # 1. Fetch the full record
@@ -77,23 +91,78 @@ if st.session_state.toxin_results:
                 # --- DISPLAY: BASIC INFO ---
                 st.markdown("---")
                 st.subheader(f"🧬 Analysis: {selected_label}")
-                st.text_area("Sequence:", record.seq, height=100)
                 
-                # --- DISPLAY: METRICS ---
-                # Create 3 columns for a cool layout
-                col1, col2, col3 = st.columns(3)
+                # Create two columns for layout
+                info_col, struct_col = st.columns([1, 1])
                 
-                with col1:
-                    st.metric("Molecular Weight", f"{stats['molecular_weight']:.2f} Da")
-                with col2:
-                    st.metric("Isoelectric Point (pI)", f"{stats['isoelectric_point']:.2f}")
-                with col3:
-                    # Instability < 40 is stable
-                    stability = "Stable" if stats['instability_index'] < 40 else "Unstable"
-                    st.metric("Stability", f"{stats['instability_index']:.2f} ({stability})")
-
-                # --- DISPLAY: VISUALIZATION (Pie Chart) ---
-                # --- DISPLAY: VISUALIZATION (Bar Chart) ---
+                with info_col:
+                    st.text_area("Sequence:", record.seq, height=150)
+                    
+                    # --- DISPLAY: METRICS ---
+                    st.markdown("### 📊 Physicochemical Properties")
+                    
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        st.metric("Molecular Weight", f"{stats['molecular_weight']:.2f} Da")
+                    with col2:
+                        st.metric("Isoelectric Point (pI)", f"{stats['isoelectric_point']:.2f}")
+                    with col3:
+                        stability = "Stable" if stats['instability_index'] < 40 else "Unstable"
+                        st.metric("Stability", f"{stats['instability_index']:.2f} ({stability})")
+                
+                # --- 3D STRUCTURE VISUALIZATION ---
+                with struct_col:
+                    st.markdown("### 🔬 3D Structure Viewer")
+                    
+                    with st.spinner("Searching for 3D structure..."):
+                        pdb_id, pdb_data = utils.get_pdb_structure(selected_id)
+                        
+                        if pdb_data:
+                            st.success(f"✅ Structure found: {pdb_id}")
+                            
+                            # Create 3D visualization
+                            view = py3Dmol.view(width=500, height=400)
+                            view.addModel(pdb_data, 'pdb')
+                            
+                            # Apply selected style
+                            style_map = {
+                                "Cartoon": "cartoon",
+                                "Stick": "stick",
+                                "Sphere": "sphere",
+                                "Line": "line",
+                                "Cross": "cross"
+                            }
+                            
+                            color_map = {
+                                "spectrum": {"spectrum": {}},
+                                "chain": {"chain": {}},
+                                "secondary structure": {"ss": {}},
+                                "atom type": {}
+                            }
+                            
+                            view.setStyle({style_map[viz_style]: color_map[color_scheme]})
+                            view.zoomTo()
+                            view.spin(True)
+                            
+                            # Display the 3D structure
+                            showmol(view, height=400, width=500)
+                            
+                            st.caption(f"🔄 Interactive 3D model - Use mouse to rotate, zoom, and explore")
+                            
+                            # Download button for PDB file
+                            st.download_button(
+                                label="📥 Download PDB File",
+                                data=pdb_data,
+                                file_name=f"{pdb_id}.pdb",
+                                mime="text/plain"
+                            )
+                        else:
+                            st.warning("⚠️ No 3D structure available for this protein")
+                            st.info("3D structures are sourced from PDB and AlphaFold databases. Not all proteins have resolved structures.")
+                
+                # --- AMINO ACID COMPOSITION CHART (Full Width) ---
+                st.markdown("---")
                 st.markdown("### 🧪 Amino Acid Composition")
                 
                 # Prepare data for the chart
@@ -107,7 +176,7 @@ if st.session_state.toxin_results:
                 percentages = [item[1] for item in sorted_aa]
                 
                 # Create the bar plot using Matplotlib
-                fig, ax = plt.subplots(figsize=(10, 6)) # Make the figure a bit wider
+                fig, ax = plt.subplots(figsize=(12, 6))
                 
                 # Create horizontal bar chart
                 ax.barh(labels, percentages, color='skyblue') 
@@ -115,14 +184,14 @@ if st.session_state.toxin_results:
                 # Add labels and title
                 ax.set_xlabel("Percentage (%)")
                 ax.set_title("Amino Acid Composition of Toxin")
-                ax.invert_yaxis() # Put highest percentage at the top
+                ax.invert_yaxis()
                 
                 # Add percentage values on the bars
                 for index, value in enumerate(percentages):
-                    ax.text(value + 0.5, index, f'{value:.1f}%', va='center') # Adjust x for label position
+                    ax.text(value + 0.5, index, f'{value:.1f}%', va='center')
                 
-                # Show it in Streamlit, ensuring layout is tight
-                st.pyplot(fig, use_container_width=True) # use_container_width makes it responsive
+                # Show it in Streamlit
+                st.pyplot(fig, use_container_width=True)
                 
             else:
                 st.error("Failed to fetch sequence details.")
