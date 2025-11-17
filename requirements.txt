@@ -2,3 +2,5 @@ streamlit
 biopython
 matplotlib
 pandas
+py3Dmol
+stmol
