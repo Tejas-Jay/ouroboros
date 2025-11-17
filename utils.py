@@ -21,14 +21,11 @@ def clean_description(raw_desc):
     """
     # 1. Remove "RecName: Full=" pattern
     if "RecName: Full=" in raw_desc:
-        # Split at "Full=" and take the part after it
         raw_desc = raw_desc.split("Full=")[1]
-        # Remove anything after a semicolon (like "; Short=...")
         raw_desc = raw_desc.split(";")[0]
         
     # 2. Remove "Chain X, " pattern (common in PDB structures)
     elif "Chain " in raw_desc:
-        # Split at the first comma and take the part after it
         parts = raw_desc.split(", ")
         if len(parts) > 1:
             raw_desc = parts[1]
@@ -73,7 +70,6 @@ def search_toxins(snake_name):
             pretty_name = clean_description(seq_record.description)
             
             # Create a label with ID for uniqueness
-            # Format: "Mambalgin-1 (P0DKR6.1)"
             label = f"{pretty_name} ({seq_record.id})"
             results[label] = seq_record.id
             
@@ -103,10 +99,8 @@ def analyze_protein(sequence):
     Takes a sequence string and returns a dictionary of physicochemical properties.
     Uses Bio.SeqUtils.ProtParam.
     """
-    # ProteinAnalysis requires a string, not a Seq object
     analyser = ProteinAnalysis(str(sequence))
     
-    # Calculate properties
     return {
         "molecular_weight": analyser.molecular_weight(),
         "instability_index": analyser.instability_index(),
@@ -114,48 +108,119 @@ def analyze_protein(sequence):
         "amino_acid_percent": analyser.get_amino_acids_percent()
     }
 
-def get_pdb_structure(uniprot_id):
+def get_uniprot_from_ncbi(ncbi_id):
     """
-    Attempts to find and fetch PDB structure data for a protein.
-    First tries to extract UniProt ID from the record ID,
-    then queries the PDB API for associated structures.
-    
-    Returns: (pdb_id, pdb_data) tuple or (None, None) if not found
+    Extracts UniProt ID from NCBI protein record.
+    Returns UniProt ID or None.
     """
     try:
-        # Clean the UniProt ID (remove version numbers like .1, .2)
-        clean_id = uniprot_id.split('.')[0]
+        # Clean the ID (remove version numbers)
+        clean_id = ncbi_id.split('.')[0]
         
-        # Query PDB API to find structures associated with this UniProt ID
-        search_url = f"https://www.ebi.ac.uk/pdbe/api/mappings/uniprot/{clean_id}"
-        response = requests.get(search_url, timeout=10)
+        # Check if it's already a UniProt ID pattern
+        if clean_id.startswith(('P', 'Q', 'O', 'A', 'B', 'C')):
+            # UniProt IDs typically start with these letters and are 6-10 chars
+            if len(clean_id) >= 6 and len(clean_id) <= 10:
+                return clean_id
+        
+        # Try to fetch cross-references from NCBI
+        handle = Entrez.efetch(db="protein", id=ncbi_id, rettype="gb", retmode="xml")
+        records = Entrez.read(handle)
+        handle.close()
+        
+        # Look for UniProt cross-references
+        if records and len(records) > 0:
+            for feature in records[0].get('GBSeq_feature-table', []):
+                for qual in feature.get('GBFeature_quals', []):
+                    if qual.get('GBQualifier_name') == 'db_xref':
+                        xref = qual.get('GBQualifier_value', '')
+                        if xref.startswith('UniProtKB/'):
+                            return xref.split('/')[-1].split(':')[-1]
+        
+        return None
+    except:
+        return None
+
+def get_pdb_structure(ncbi_id, sequence):
+    """
+    Multi-source structure fetcher with fallback strategy:
+    1. AlphaFold Database (AI-predicted, 200M+ structures)
+    2. ESMFold (on-demand AI prediction from sequence)
+    3. PDB (experimental structures)
+    
+    Returns: (source_name, pdb_data) tuple or (None, None) if all fail
+    """
+    
+    # --- METHOD 1: AlphaFold Database (BEST COVERAGE) ---
+    try:
+        uniprot_id = get_uniprot_from_ncbi(ncbi_id)
+        
+        if uniprot_id:
+            clean_id = uniprot_id.split('.')[0]
+            st.info(f"🔍 Checking AlphaFold for UniProt: {clean_id}")
+            
+            # Try AlphaFold v4
+            alphafold_url = f"https://alphafold.ebi.ac.uk/files/AF-{clean_id}-F1-model_v4.pdb"
+            af_response = requests.get(alphafold_url, timeout=15)
+            
+            if af_response.status_code == 200:
+                st.success("✅ Found AlphaFold structure!")
+                return f"AlphaFold-{clean_id}", af_response.text
+            
+            # Try PDBe for experimental structures
+            st.info("🔍 Checking PDB for experimental structure...")
+            search_url = f"https://www.ebi.ac.uk/pdbe/api/mappings/uniprot/{clean_id}"
+            pdb_response = requests.get(search_url, timeout=10)
+            
+            if pdb_response.status_code == 200:
+                data = pdb_response.json()
+                if clean_id in data and data[clean_id]:
+                    pdb_ids = list(data[clean_id].keys())
+                    if pdb_ids:
+                        pdb_id = pdb_ids[0]
+                        pdb_url = f"https://files.rcsb.org/download/{pdb_id}.pdb"
+                        pdb_file = requests.get(pdb_url, timeout=10)
+                        
+                        if pdb_file.status_code == 200:
+                            st.success("✅ Found experimental PDB structure!")
+                            return f"PDB-{pdb_id}", pdb_file.text
+    except Exception as e:
+        st.warning(f"AlphaFold/PDB lookup issue: {e}")
+    
+    # --- METHOD 2: ESMFold (ON-DEMAND PREDICTION) ---
+    try:
+        st.info("🧠 Generating structure with ESMFold AI...")
+        
+        # ESMFold API endpoint
+        esm_url = "https://api.esmatlas.com/foldSequence/v1/pdb/"
+        
+        # Clean sequence (remove any whitespace/newlines)
+        clean_seq = str(sequence).replace('\n', '').replace(' ', '').strip()
+        
+        # ESMFold has length limits (typically ~400 residues work well)
+        if len(clean_seq) > 400:
+            st.warning("⚠️ Sequence is long, ESMFold may take time or fail")
+        
+        # Make request
+        response = requests.post(
+            esm_url,
+            data=clean_seq,
+            headers={'Content-Type': 'text/plain'},
+            timeout=60  # ESMFold can take time
+        )
         
         if response.status_code == 200:
-            data = response.json()
+            st.success("✅ ESMFold prediction complete!")
+            return "ESMFold-Prediction", response.text
+        else:
+            st.warning(f"ESMFold failed with status: {response.status_code}")
             
-            # Get the first PDB ID from the results
-            if clean_id in data and data[clean_id]:
-                pdb_ids = list(data[clean_id].keys())
-                if pdb_ids:
-                    pdb_id = pdb_ids[0]  # Take the first structure
-                    
-                    # Now fetch the actual PDB file
-                    pdb_url = f"https://files.rcsb.org/download/{pdb_id}.pdb"
-                    pdb_response = requests.get(pdb_url, timeout=10)
-                    
-                    if pdb_response.status_code == 200:
-                        return pdb_id, pdb_response.text
-        
-        # If PDBe search fails, try AlphaFold database
-        alphafold_url = f"https://alphafold.ebi.ac.uk/files/AF-{clean_id}-F1-model_v4.pdb"
-        af_response = requests.get(alphafold_url, timeout=10)
-        
-        if af_response.status_code == 200:
-            return f"AlphaFold-{clean_id}", af_response.text
-            
+    except requests.Timeout:
+        st.warning("⚠️ ESMFold timed out (sequence may be too long)")
     except Exception as e:
-        st.warning(f"Could not fetch 3D structure: {e}")
+        st.warning(f"ESMFold error: {e}")
     
+    # --- ALL METHODS FAILED ---
     return None, None
 
 # -----------------------------------------------------------------------------
