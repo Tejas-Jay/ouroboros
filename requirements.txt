@@ -4,3 +4,4 @@ matplotlib
 pandas
 py3Dmol
 stmol
+ipython_genutils
