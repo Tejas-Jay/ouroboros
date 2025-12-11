@@ -460,3 +460,358 @@ with tab3:
     st.markdown("---")
     
     st.info("⚠️ **Disclaimer:** This information is for educational and research purposes. For snake bite incidents, seek immediate medical attention.")
+
+# =============================================================================
+# TAB 4: COMPARATIVE VENOM ANALYSIS
+# =============================================================================
+with tab4:
+    st.header("🔄 Comparative Venom Analysis")
+    st.markdown("Compare venom compositions across multiple snake species to understand evolutionary adaptations")
+    
+    # Initialize analyzer
+    analyzer = comparative_analysis.get_comparative_analyzer()
+    
+    # Get all available snakes
+    all_snakes = analyzer.get_all_snakes()
+    
+    # Multi-select for snake comparison
+    st.subheader("📋 Select Snakes to Compare")
+    
+    selected_snakes = st.multiselect(
+        "Choose 2-5 snakes for comparison:",
+        options=all_snakes,
+        default=['Black Mamba', 'King Cobra'],
+        max_selections=5
+    )
+    
+    if len(selected_snakes) < 2:
+        st.warning("⚠️ Please select at least 2 snakes to compare")
+    else:
+        # Tabs for different comparison views
+        comparison_view = st.selectbox(
+            "View Type:",
+            [
+                "🎯 Overview Comparison",
+                "🧬 Toxin Composition",
+                "📊 Toxin Distribution",
+                "🔬 Functional Analysis",
+                "🧪 Detailed Profiles",
+                "🧬 Evolutionary Insights"
+            ]
+        )
+        
+        # =====================================================================
+        # VIEW 1: OVERVIEW COMPARISON
+        # =====================================================================
+        if comparison_view == "🎯 Overview Comparison":
+            st.subheader("Overview Comparison Table")
+            
+            comparison_df = analyzer.create_comparison_dataframe(selected_snakes)
+            st.dataframe(comparison_df, use_container_width=True, hide_index=True)
+            
+            st.markdown("---")
+            
+            # Key metrics visualization
+            st.subheader("📈 Key Metrics Visualization")
+            
+            metrics_col1, metrics_col2 = st.columns(2)
+            
+            with metrics_col1:
+                st.markdown("### Venom Type Distribution")
+                venom_types = comparison_df['Venom Type'].value_counts()
+                st.bar_chart(venom_types)
+            
+            with metrics_col2:
+                st.markdown("### Speed Classification")
+                speeds = comparison_df['Speed'].value_counts()
+                st.bar_chart(speeds)
+        
+        # =====================================================================
+        # VIEW 2: TOXIN COMPOSITION
+        # =====================================================================
+        elif comparison_view == "🧬 Toxin Composition":
+            st.subheader("Toxin Composition Analysis")
+            
+            # Get toxin comparison
+            toxin_comparison = analyzer.compare_toxins(selected_snakes)
+            
+            if 'error' not in toxin_comparison:
+                # Conserved toxins
+                conserved = toxin_comparison['conserved']
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown(f"### 🔄 Conserved Toxins ({len(conserved)})")
+                    st.markdown("**Present in ALL selected snakes:**")
+                    if conserved:
+                        for toxin in sorted(conserved):
+                            st.write(f"✓ {toxin}")
+                    else:
+                        st.info("No toxins are shared across all selected snakes")
+                
+                with col2:
+                    st.markdown(f"### 🆔 Unique Toxins by Species")
+                    st.markdown("**Only in specific snakes:**")
+                    
+                    for snake in selected_snakes:
+                        unique = toxin_comparison['unique_by_snake'].get(snake, set())
+                        if unique:
+                            st.write(f"**{snake}:**")
+                            for toxin in sorted(unique):
+                                st.write(f"  • {toxin}")
+                
+                st.markdown("---")
+                
+                # Detailed toxin table
+                st.subheader("Detailed Toxin Information")
+                
+                toxin_details = []
+                for snake in selected_snakes:
+                    if snake in analyzer.venom_profiles:
+                        for toxin_name, toxin_data in analyzer.venom_profiles[snake]['toxins'].items():
+                            is_conserved = toxin_name in conserved
+                            toxin_details.append({
+                                'Snake': snake,
+                                'Toxin Type': toxin_name,
+                                'Percentage': f"{toxin_data['percentage']}%",
+                                'Function': toxin_data['function'],
+                                'Conserved': '✓ Yes' if is_conserved else '✗ Unique'
+                            })
+                
+                toxin_df = pd.DataFrame(toxin_details)
+                st.dataframe(toxin_df, use_container_width=True, hide_index=True)
+        
+        # =====================================================================
+        # VIEW 3: TOXIN DISTRIBUTION VISUALIZATION
+        # =====================================================================
+        elif comparison_view == "📊 Toxin Distribution":
+            st.subheader("Toxin Percentage Distribution")
+            
+            toxin_percent_df = analyzer.create_toxin_percentage_data(selected_snakes)
+            
+            # Create visualization
+            st.markdown("### Stacked Bar Chart: Toxin Composition")
+            
+            # Pivot for stacked bar chart
+            pivot_df = toxin_percent_df.pivot(index='Snake', columns='Toxin Type', values='Percentage').fillna(0)
+            
+            st.bar_chart(pivot_df)
+            
+            st.markdown("---")
+            
+            # Detailed breakdown
+            st.markdown("### Percentage Breakdown by Snake")
+            
+            for snake in selected_snakes:
+                with st.expander(f"📊 {snake}"):
+                    if snake in analyzer.venom_profiles:
+                        profile = analyzer.venom_profiles[snake]
+                        
+                        # Create a detailed breakdown
+                        breakdown_data = []
+                        for toxin_name, toxin_data in profile['toxins'].items():
+                            breakdown_data.append({
+                                'Toxin': toxin_name,
+                                'Percentage': f"{toxin_data['percentage']}%",
+                                'Function': toxin_data['function']
+                            })
+                        
+                        breakdown_df = pd.DataFrame(breakdown_data)
+                        st.dataframe(breakdown_df, use_container_width=True, hide_index=True)
+                        
+                        # Pie chart for this snake
+                        fig, ax = plt.subplots(figsize=(8, 6))
+                        toxin_names = [t for t in profile['toxins'].keys()]
+                        percentages = [profile['toxins'][t]['percentage'] for t in toxin_names]
+                        
+                        ax.pie(percentages, labels=toxin_names, autopct='%1.1f%%', startangle=90)
+                        ax.set_title(f"{snake} - Venom Composition")
+                        st.pyplot(fig, use_container_width=True)
+        
+        # =====================================================================
+        # VIEW 4: FUNCTIONAL ANALYSIS
+        # =====================================================================
+        elif comparison_view == "🔬 Functional Analysis":
+            st.subheader("Functional Category Analysis")
+            st.markdown("Understanding how different snakes achieve similar or different effects")
+            
+            function_analysis = analyzer.get_toxin_function_analysis(selected_snakes)
+            
+            # Display each functional category
+            for category, toxins_list in function_analysis.items():
+                if toxins_list:
+                    with st.expander(f"**{category}** ({len(toxins_list)} entries)"):
+                        
+                        function_df = pd.DataFrame(toxins_list)
+                        st.dataframe(function_df, use_container_width=True, hide_index=True)
+                        
+                        # Chart for this function
+                        fig, ax = plt.subplots(figsize=(10, 4))
+                        
+                        # Group by snake
+                        grouped_data = {}
+                        for item in toxins_list:
+                            snake = item['snake']
+                            if snake not in grouped_data:
+                                grouped_data[snake] = 0
+                            grouped_data[snake] += item['percentage']
+                        
+                        snakes_list = list(grouped_data.keys())
+                        percentages = list(grouped_data.values())
+                        
+                        ax.bar(snakes_list, percentages, color='steelblue')
+                        ax.set_ylabel('Cumulative Percentage (%)')
+                        ax.set_title(f"{category} - Contribution by Snake")
+                        ax.set_xticklabels(snakes_list, rotation=45, ha='right')
+                        
+                        st.pyplot(fig, use_container_width=True)
+        
+        # =====================================================================
+        # VIEW 5: DETAILED PROFILES
+        # =====================================================================
+        elif comparison_view == "🧪 Detailed Profiles":
+            st.subheader("Individual Snake Venom Profiles")
+            
+            for snake in selected_snakes:
+                with st.expander(f"🐍 {snake} - Detailed Profile"):
+                    profile_summary = analyzer.create_venom_profile_summary(snake)
+                    
+                    if profile_summary:
+                        profile = profile_summary['profile']
+                        clinical = profile_summary['clinical']
+                        
+                        # Basic info
+                        col1, col2, col3 = st.columns(3)
+                        
+                        with col1:
+                            st.write(f"**Region:** {profile['region']}")
+                            st.write(f"**Venom Type:** {profile['venom_type']}")
+                        
+                        with col2:
+                            st.write(f"**Speed:** {profile['speed']}")
+                            st.write(f"**Victim Behavior:** {profile['victim_behavior']}")
+                        
+                        with col3:
+                            st.write(f"**LD50:** {clinical.get('ld50_mice', 'N/A')}")
+                            st.write(f"**Mortality:** {clinical.get('mortality_rate', 'N/A')}")
+                        
+                        st.markdown("---")
+                        
+                        # Toxin composition
+                        st.markdown("### Venom Composition")
+                        
+                        toxin_comp = []
+                        for toxin_name, toxin_data in profile['toxins'].items():
+                            toxin_comp.append({
+                                'Toxin': toxin_name,
+                                'Percentage': toxin_data['percentage'],
+                                'Function': toxin_data['function']
+                            })
+                        
+                        toxin_comp_df = pd.DataFrame(toxin_comp)
+                        st.dataframe(toxin_comp_df, use_container_width=True, hide_index=True)
+                        
+                        st.markdown("---")
+                        
+                        # Clinical effects
+                        st.markdown("### Clinical Effects")
+                        
+                        clinical_effects = clinical.get('primary_effects', [])
+                        for effect in clinical_effects:
+                            st.write(f"• {effect}")
+                        
+                        st.write(f"**Onset Time:** {clinical.get('onset_time', 'N/A')}")
+                        st.write(f"**Treatment:** {clinical.get('treatment', 'N/A')}")
+        
+        # =====================================================================
+        # VIEW 6: EVOLUTIONARY INSIGHTS
+        # =====================================================================
+        elif comparison_view == "🧬 Evolutionary Insights":
+            st.subheader("Evolutionary & Functional Insights")
+            
+            insights = analyzer.get_evolutionary_insights(selected_snakes)
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric("Venom Type Diversity", f"{insights['diversity']} types")
+            
+            with col2:
+                st.metric("Geographic Regions", len(insights['regions']))
+            
+            with col3:
+                st.metric("Snakes Compared", len(selected_snakes))
+            
+            st.markdown("---")
+            
+            st.markdown("### Primary Toxin Strategies")
+            
+            strategy_data = []
+            for snake, strategy in insights['primary_strategies'].items():
+                strategy_data.append({
+                    'Snake': snake,
+                    'Primary Strategy': strategy,
+                    'Profile': analyzer.venom_profiles[snake]['venom_type']
+                })
+            
+            strategy_df = pd.DataFrame(strategy_data)
+            st.dataframe(strategy_df, use_container_width=True, hide_index=True)
+            
+            st.markdown("---")
+            
+            # Geographic distribution
+            st.markdown("### Geographic Distribution")
+            
+            regions_list = []
+            for snake in selected_snakes:
+                if snake in analyzer.venom_profiles:
+                    region = analyzer.venom_profiles[snake]['region']
+                    regions_list.append({
+                        'Snake': snake,
+                        'Region': region
+                    })
+            
+            regions_df = pd.DataFrame(regions_list)
+            st.dataframe(regions_df, use_container_width=True, hide_index=True)
+            
+            st.markdown("---")
+            
+            # Evolutionary narrative
+            if len(selected_snakes) == 2 and 'comparison' in insights:
+                comp = insights['comparison']
+                
+                st.markdown("### Evolutionary Comparison")
+                
+                st.write(f"""
+                **{comp['snake1']} vs {comp['snake2']}**
+                
+                - **Shared Toxins:** {comp['shared_toxins']} ({', '.join(comp['total_shared']) if comp['total_shared'] else 'None'})
+                - **Evolutionary Divergence:** {comp['divergence']} different toxin types
+                
+                This suggests these species evolved venom strategies adapted to their specific prey 
+                and environmental pressures, while maintaining some conserved toxic components.
+                """)
+            
+            st.markdown("---")
+            
+            st.markdown("### Key Observations")
+            
+            st.write("""
+            **Venom Evolution Insights:**
+            
+            1. **Neurotoxic vs Hemorrhagic:** Snakes in different regions evolved different primary 
+               strategies (neurotoxic for quick prey subdual, hemorrhagic for larger prey)
+            
+            2. **Conserved Toxins:** Phospholipase A2 and Serine Proteases appear in most venoms, 
+               suggesting these are ancient, highly effective components
+            
+            3. **Unique Specializations:** Some snakes evolved unique toxins tailored to their prey, 
+               showing rapid evolution in venom composition
+            
+            4. **Geographic Adaptation:** Species in similar regions often share venom compositions, 
+               but species in different regions show remarkable diversity
+            
+            5. **Redundancy & Synergy:** Multiple toxin types target different victim systems, 
+               providing redundancy and synergistic effects
+            """)
