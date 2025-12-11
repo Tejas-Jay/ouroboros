@@ -1,10 +1,12 @@
 import streamlit as st #type: ignore
 import utils
 import toxicity_scraper
+import comparative_analysis #type: ignore
 import matplotlib.pyplot as plt #type: ignore
 import py3Dmol #type: ignore
 import streamlit.components.v1 as components #type: ignore
 import pandas as pd #type: ignore
+import numpy as np #type: ignore
 
 # -----------------------------------------------------------------------------
 # PAGE CONFIGURATION
@@ -23,7 +25,7 @@ st.markdown("### Explore the molecular weapons of the snake world.")
 st.markdown("---")
 
 # Create tabs for different sections
-tab1, tab2, tab3 = st.tabs(["🔬 Toxin Analyzer", "⚠️ Toxicity Database", "📊 Snake Statistics"])
+tab1, tab2, tab3, tab4 = st.tabs(["🔬 Toxin Analyzer", "⚠️ Toxicity Database", "📊 Snake Statistics", "🔄 Comparative Analysis"])
 
 # =============================================================================
 # TAB 1: TOXIN ANALYZER (Original functionality)
