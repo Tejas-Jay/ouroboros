@@ -5,3 +5,6 @@ pandas
 py3Dmol
 stmol
 ipython_genutils
+requests
+beautifulsoup4
+lxml
